@@ -114,6 +114,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     private int mQuality;                   // Compression quality hint (0-100: 0=low quality & high compression, 100=compress of max quality)
     private int targetWidth;                // desired width of the image
     private int targetHeight;               // desired height of the image
+    private int mediaMaxCount;              // Maximum number of media units retrieved and processed from Gallery
     private Uri imageUri;                   // Uri of captured image
     private String imageFilePath;           // File where the image is stored
     private int encodingType;               // Type of encoding to use
@@ -163,6 +164,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             this.encodingType = JPEG;
             this.mediaType = PICTURE;
             this.mQuality = 50;
+            this.mediaMaxCount = 3;
 
             //Take the values from the arguments if they're not already defined (this is tricky)
             this.destType = args.getInt(1);
@@ -175,6 +177,8 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             this.allowEdit = args.getBoolean(7);
             this.correctOrientation = args.getBoolean(8);
             this.saveToPhotoAlbum = args.getBoolean(9);
+            this.mediaMaxCount = args.getInt(10);
+
 
             // If the user specifies a 0 or smaller width/height
             // make it -1 so later comparisons succeed
@@ -390,7 +394,9 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             } else {
                 intent.setAction(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                if (destType == FILE_URI) {
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                }
             }
         } else if (this.mediaType == VIDEO) {
             intent.setType("video/*");
@@ -699,7 +705,9 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
 
 
     /**
-     * Applies all needed transformation to the image received from the gallery. Currently limited to three media files, but can be easily modified.
+     * Applies all needed transformation to the image or images received from the gallery. Currently limited to three media files, but can be easily modified.
+     * If destType is URL then only one media unit is processed and returned.
+     * With destType URI multiple media units is possible to send to caller.
      *
      * @param destType In which form should we return the image
      * @param intent   An Intent, which can return result data to the caller (various data can be attached to Intent "extras").
@@ -715,7 +723,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             while (index != counter) {
                 uriList.add(intent.getClipData().getItemAt(index).getUri());
                 index++;
-                if (index == 3) // Number "3" limits the selected content from gallery to 3. First three media files are processed.
+                if (index == mediaMaxCount) // Limits the selected content from gallery. By default is set to 3.
                 {
                     break;
                 }
@@ -731,22 +739,19 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             }
         }
 
-        int pictureCount = uriList.size();
-        JSONArray selectedContent = new JSONArray();
-        int index = 0;
         if (destType == DATA_URL) {
-            while (index != pictureCount) {
-                String base64Picture = processSingleUri(destType, uriList.get(index));
-                if (base64Picture == null) {
-                    this.failPicture("Error retrieving result.");
-                } else {
-                    selectedContent.put(base64Picture);
-                }
-                index++;
+            String base64Picture = processSingleUri(destType, uriList.get(0));
+            if (base64Picture == null) {
+                this.failPicture("Error retrieving result.");
+            } else {
+                this.callbackContext.success(base64Picture);
             }
         }
 
         if (destType == FILE_URI) {
+            int index = 0;
+            int pictureCount = uriList.size();
+            JSONArray selectedContent = new JSONArray();
             while (index != pictureCount) {
                 String processedUri = processSingleUri(destType, uriList.get(index));
                 if (processedUri == null) {
@@ -756,14 +761,12 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 }
                 index++;
             }
+            if (selectedContent.length() != 0) {
+                this.callbackContext.success(selectedContent);
+            } else {
+                this.failPicture("No data from photo library");
+            }
         }
-
-        if (selectedContent.length() != 0) {
-            this.callbackContext.success(selectedContent);
-        } else {
-            this.failPicture("No data from photo library");
-        }
-
     }
     /**
      * Processes single Uri according to the destTpe and mediaType.
@@ -811,7 +814,11 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
 
                     // If sending base64 image back
                     if (destType == DATA_URL) {
-                        return this.processPicture(bitmap, this.encodingType);
+                        String base64Picture = this.processPicture(bitmap, this.encodingType);
+                        bitmap.recycle();
+                        bitmap = null;
+                        System.gc();
+                        return base64Picture;
                     }
 
                     // If sending filename back
@@ -836,11 +843,6 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                             return finalLocation;
                         }
                     }
-                    if (bitmap != null) {
-                        bitmap.recycle();
-                        bitmap = null;
-                    }
-                    System.gc();
                 }
             }
         }
@@ -1341,13 +1343,15 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
         try {
             if (bitmap.compress(compressFormat, mQuality, jpeg_data)) {
                 byte[] code = jpeg_data.toByteArray();
-                return Base64.encodeToString(code, Base64.NO_WRAP);
-//                code = null;
+                String base64Picture = Base64.encodeToString(code, Base64.NO_WRAP);
+                code = null;
+                jpeg_data = null;
+                return base64Picture;
             }
         } catch (Exception e) {
             this.failPicture("Error compressing image: "+e.getLocalizedMessage());
         }
-//        jpeg_data = null;
+        jpeg_data = null;
         return null;
     }
 
