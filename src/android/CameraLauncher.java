@@ -59,7 +59,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * This class launches the camera view, allows the user to take a picture, closes the camera view,
@@ -387,6 +390,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             } else {
                 intent.setAction(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             }
         } else if (this.mediaType == VIDEO) {
             intent.setType("video/*");
@@ -520,8 +524,12 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 return;
             }
 
-
-            this.processPicture(bitmap, this.encodingType);
+            String base64Picture = this.processPicture(bitmap, this.encodingType);
+            if (base64Picture == null) {
+                this.failPicture("Process picture error.");
+            } else {
+                this.callbackContext.success(base64Picture);
+            }
 
             if (!this.saveToPhotoAlbum) {
                 checkForDuplicateImage(DATA_URL);
@@ -695,17 +703,54 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
      * @param destType In which form should we return the image
      * @param intent   An Intent, which can return result data to the caller (various data can be attached to Intent "extras").
      */
-    private void processResultFromGallery(int destType, Intent intent) {
-        Uri uri = intent.getData();
-        if (uri == null) {
+    private void processResultFromGallery(int destType, Intent intent) throws JSONException {
+        List<Uri> uriList = new ArrayList<>();
+
+        if (intent.getClipData() == null) {
+            uriList.add(intent.getData());
+        } else {
+            int counter = intent.getClipData().getItemCount();
+            int index = 0;
+            while (index != counter) {
+                uriList.add(intent.getClipData().getItemAt(index).getUri());
+                index++;
+                if (index == 3) {
+                    break;
+                }
+            }
+        }
+
+        if (uriList.size() == 0) {
             if (croppedUri != null) {
-                uri = croppedUri;
+                uriList.add(croppedUri);
             } else {
                 this.failPicture("null data from photo library");
                 return;
             }
         }
 
+        int pictureCount = uriList.size();
+        JSONArray selectedContent = new JSONArray();
+        int index = 0;
+        while (index != pictureCount) {
+            String base64Picture = processSingleUri(destType, uriList.get(index));
+            if (base64Picture == null) {
+                this.failPicture("Error retrieving result.");
+            } else if (Objects.equals(base64Picture, "success")) {
+                break;
+            } else {
+                selectedContent.put(base64Picture);
+            }
+            index++;
+        }
+        if (selectedContent.length() != 0) {
+            this.callbackContext.success(selectedContent);
+        } else {
+            this.failPicture("null data from photo library");
+        }
+    }
+
+    private String processSingleUri(int destType, Uri uri) {
         String fileLocation = FileHelper.getRealPath(uri, this.cordova);
         LOG.d(LOG_TAG, "File location is: " + fileLocation);
 
@@ -739,12 +784,12 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                     if (bitmap == null) {
                         LOG.d(LOG_TAG, "I either have a null image path or bitmap");
                         this.failPicture("Unable to create bitmap!");
-                        return;
+                        return null;
                     }
 
                     // If sending base64 image back
                     if (destType == DATA_URL) {
-                        this.processPicture(bitmap, this.encodingType);
+                        return this.processPicture(bitmap, this.encodingType);
                     }
 
                     // If sending filename back
@@ -766,6 +811,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                             }
                         } else {
                             this.callbackContext.success(finalLocation);
+                            return "success";
                         }
                     }
                     if (bitmap != null) {
@@ -776,7 +822,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 }
             }
         }
-
+        return "success";
     }
 
     /**
@@ -865,7 +911,11 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 final int finalDestType = destType;
                 cordova.getThreadPool().execute(new Runnable() {
                     public void run() {
-                        processResultFromGallery(finalDestType, i);
+                        try {
+                            processResultFromGallery(finalDestType, i);
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
                     }
                 });
             } else if (resultCode == Activity.RESULT_CANCELED) {
@@ -1262,24 +1312,21 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
      *
      * @param bitmap
      */
-    public void processPicture(Bitmap bitmap, int encodingType) {
+    public String processPicture(Bitmap bitmap, int encodingType) {
         ByteArrayOutputStream jpeg_data = new ByteArrayOutputStream();
         CompressFormat compressFormat = getCompressFormatForEncodingType(encodingType);
 
         try {
             if (bitmap.compress(compressFormat, mQuality, jpeg_data)) {
                 byte[] code = jpeg_data.toByteArray();
-                byte[] output = Base64.encode(code, Base64.NO_WRAP);
-                String js_out = new String(output);
-                this.callbackContext.success(js_out);
-                js_out = null;
-                output = null;
-                code = null;
+                return Base64.encodeToString(code, Base64.NO_WRAP);
+//                code = null;
             }
         } catch (Exception e) {
             this.failPicture("Error compressing image: "+e.getLocalizedMessage());
         }
-        jpeg_data = null;
+//        jpeg_data = null;
+        return null;
     }
 
     /**
