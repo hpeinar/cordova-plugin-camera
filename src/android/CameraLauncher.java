@@ -397,6 +397,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             title = GET_VIDEO;
             intent.setAction(Intent.ACTION_GET_CONTENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         } else if (this.mediaType == ALLMEDIA) {
             // I wanted to make the type 'image/*, video/*' but this does not work on all versions
             // of android so I had to go with the wildcard search.
@@ -732,24 +733,44 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
         int pictureCount = uriList.size();
         JSONArray selectedContent = new JSONArray();
         int index = 0;
-        while (index != pictureCount) {
-            String base64Picture = processSingleUri(destType, uriList.get(index));
-            if (base64Picture == null) {
-                this.failPicture("Error retrieving result.");
-            } else if (Objects.equals(base64Picture, "success")) {
-                break;
-            } else {
-                selectedContent.put(base64Picture);
+        if (destType == DATA_URL) {
+            while (index != pictureCount) {
+                String base64Picture = processSingleUri(destType, uriList.get(index));
+                if (base64Picture == null) {
+                    this.failPicture("Error retrieving result.");
+                } else {
+                    selectedContent.put(base64Picture);
+                }
+                index++;
             }
-            index++;
         }
+
+        if (destType == FILE_URI) {
+            while (index != pictureCount) {
+                String processedUri = processSingleUri(destType, uriList.get(index));
+                if (processedUri == null) {
+                    this.failPicture("Error retrieving result.");
+                } else {
+                    selectedContent.put(processedUri);
+                }
+                index++;
+            }
+        }
+
         if (selectedContent.length() != 0) {
             this.callbackContext.success(selectedContent);
         } else {
-            this.failPicture("null data from photo library");
+            this.failPicture("No data from photo library");
         }
-    }
 
+    }
+    /**
+     * Processes single Uri according to the destTpe and mediaType.
+     *
+     * @param destType In which format should we return the media. FILE_URI = 1 , DATA_URL = 0
+     * @param uri   Media file uri.
+     * @return String value depending on destType and mediaType.
+     */
     private String processSingleUri(int destType, Uri uri) {
         String fileLocation = FileHelper.getRealPath(uri, this.cordova);
         LOG.d(LOG_TAG, "File location is: " + fileLocation);
@@ -764,7 +785,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             // If you ask for video or the selected file cannot be processed
             // there will be no attempt to resize any returned data.
             if (this.mediaType == VIDEO  || !isImageMimeTypeProcessable(mimeTypeOfGalleryFile)) {
-                this.callbackContext.success(finalLocation);
+                return finalLocation;
             } else {
 
                 // This is a special case to just return the path as no scaling,
@@ -773,7 +794,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                         destType == FILE_URI && !this.correctOrientation &&
                         getMimetypeForEncodingType().equalsIgnoreCase(mimeTypeOfGalleryFile))
                 {
-                    this.callbackContext.success(finalLocation);
+                    return finalLocation;
                 } else {
                     Bitmap bitmap = null;
                     try {
@@ -803,15 +824,15 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                                 String modifiedPath = this.outputModifiedBitmap(bitmap, uri, mimeTypeOfGalleryFile);
                                 // The modified image is cached by the app in order to get around this and not have to delete you
                                 // application cache I'm adding the current system time to the end of the file url.
-                                this.callbackContext.success("file://" + modifiedPath + "?" + System.currentTimeMillis());
+                                String finalUri = "file://" + modifiedPath + "?" + System.currentTimeMillis();
+                                return finalUri;
 
                             } catch (Exception e) {
                                 e.printStackTrace();
                                 this.failPicture("Error retrieving image: "+e.getLocalizedMessage());
                             }
                         } else {
-                            this.callbackContext.success(finalLocation);
-                            return "success";
+                            return finalLocation;
                         }
                     }
                     if (bitmap != null) {
@@ -822,7 +843,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 }
             }
         }
-        return "success";
+        return null;
     }
 
     /**
