@@ -699,7 +699,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
 
 
     /**
-     * Applies all needed transformation to the image received from the gallery.
+     * Applies all needed transformation to the image received from the gallery. Currently limited to three media files, but can be easily modified.
      *
      * @param destType In which form should we return the image
      * @param intent   An Intent, which can return result data to the caller (various data can be attached to Intent "extras").
@@ -715,7 +715,8 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             while (index != counter) {
                 uriList.add(intent.getClipData().getItemAt(index).getUri());
                 index++;
-                if (index == 3) {
+                if (index == 3) // Number "3" limits the selected content from gallery to 3. First three media files are processed.
+                {
                     break;
                 }
             }
