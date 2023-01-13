@@ -394,7 +394,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             } else {
                 intent.setAction(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                if (destType == FILE_URI) {
+                if (destType == FILE_URI && mediaMaxCount > 1) {
                     intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 }
             }
