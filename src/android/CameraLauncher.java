@@ -177,7 +177,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             this.allowEdit = args.getBoolean(7);
             this.correctOrientation = args.getBoolean(8);
             this.saveToPhotoAlbum = args.getBoolean(9);
-            this.mediaMaxCount = args.getInt(10);
+            this.mediaMaxCount = args.getInt(12);
 
 
             // If the user specifies a 0 or smaller width/height

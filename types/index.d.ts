@@ -102,6 +102,9 @@ interface CameraOptions {
     cameraDirection?: number;
     /** iOS-only options that specify popover location in iPad. Defined in CameraPopoverOptions. */
     popoverOptions?: CameraPopoverOptions;
+
+    /** Android-only Defines how many images users are allowed to select. If set to 1, multiselect will be disabled */
+    mediaMaxCount?: number;
 }
 
 /**
